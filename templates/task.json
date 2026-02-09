@@ -1,0 +1,6 @@
+{
+  "name": "task",
+  "description": "Simple task template with checklist",
+  "content": "## Task Description\n{{description}}\n\n## Checklist\n{{#checklist}}* [ ] {{.}}\n{{/checklist}}\n\n## Notes\n{{notes}}",
+  "variables": ["description", "checklist", "notes"]
+}

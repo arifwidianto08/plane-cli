@@ -1,0 +1,6 @@
+{
+  "name": "feature",
+  "description": "Feature development with Definition of Done checklist",
+  "content": "## Definition Of Done\n\n* [ ] {{feature_name}}\n{{#modules}}  * [ ] {{.}}\n{{/modules}}\n\n## Acceptance Criteria\n{{#acceptance_criteria}}* [ ] {{.}}\n{{/acceptance_criteria}}\n\n## Technical Notes\n{{notes}}\n\n---\n**Created:** {{date}}\n**Priority:** {{priority}}",
+  "variables": ["feature_name", "modules", "acceptance_criteria", "notes", "date", "priority"]
+}

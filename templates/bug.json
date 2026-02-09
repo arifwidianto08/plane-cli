@@ -1,0 +1,6 @@
+{
+  "name": "bug",
+  "description": "Bug report template with reproduction steps",
+  "content": "## Bug Description\n{{description}}\n\n## Steps to Reproduce\n{{#steps}}1. {{.}}\n{{/steps}}\n\n## Expected Behavior\n{{expected}}\n\n## Actual Behavior\n{{actual}}\n\n## Environment\n- Version: {{version}}\n- Browser: {{browser}}\n- OS: {{os}}\n\n## Additional Notes\n{{notes}}",
+  "variables": ["description", "steps", "expected", "actual", "version", "browser", "os", "notes"]
+}

@@ -1,0 +1,23 @@
+# Plane CLI Configuration
+
+# Default settings for new work items
+defaults:
+  project: ""           # Default project identifier
+  state: "Backlog"      # Default state
+  priority: 2           # 0=Urgent, 1=High, 2=Medium, 3=Low
+
+# Project shortcuts - use short names for common projects
+# projects:
+#   admin: "admin-panel"
+#   api: "backend-api"
+#   web: "frontend-web"
+
+# Template settings
+templates:
+  directory: "./templates"
+  default: "feature"
+
+# Fuzzy matching configuration
+fuzzy:
+  min_score: 60       # Minimum match score (0-100)
+  max_results: 10     # Maximum results to show
