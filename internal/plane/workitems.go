@@ -182,7 +182,7 @@ func BuildCreatePayload(values map[string]interface{}) (*WorkItemCreate, error) 
 	if state, ok := values["state"].(string); ok {
 		payload.State = state
 	}
-	if priority, ok := values["priority"].(int); ok {
+	if priority, ok := values["priority"].(string); ok {
 		payload.Priority = priority
 	}
 	if assignees, ok := values["assignees"].([]string); ok {
@@ -197,7 +197,7 @@ func BuildCreatePayload(values map[string]interface{}) (*WorkItemCreate, error) 
 	if targetDate, ok := values["target_date"].(string); ok {
 		payload.TargetDate = targetDate
 	}
-	if estimate, ok := values["estimate_point"].(float64); ok {
+	if estimate, ok := values["estimate_point"].(string); ok {
 		payload.EstimatePoint = estimate
 	}
 	if module, ok := values["module"].(string); ok {

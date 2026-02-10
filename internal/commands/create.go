@@ -116,18 +116,34 @@ func runCreate(cmd *cobra.Command, args []string) error {
 
 	// Build work item create payload
 	create := &plane.WorkItemCreate{
-		Name:          title,
-		Description:   description,
-		State:         state,
-		Priority:      plane.ParsePriority(priorityStr),
-		Assignees:     assignees,
-		Labels:        labels,
-		StartDate:     startDate,
-		TargetDate:    targetDate,
-		EstimatePoint: estimate,
-		Module:        module,
-		Cycle:         cycle,
-		Parent:        parent,
+		Name:        title,
+		Description: description,
+		Priority:    plane.ParsePriorityString(priorityStr),
+		Assignees:   assignees,
+		Labels:      labels,
+		StartDate:   startDate,
+		TargetDate:  targetDate,
+		Module:      module,
+		Cycle:       cycle,
+		Parent:      parent,
+	}
+
+	// Convert state name to UUID if provided
+	if state != "" {
+		stateID, err := client.GetStateByName(project, state)
+		if err != nil {
+			return fmt.Errorf("invalid state '%s': %w", state, err)
+		}
+		create.State = stateID
+	}
+
+	// Convert estimate to UUID if provided
+	if estimate > 0 {
+		estimateID, err := client.GetEstimatePointByValue(project, estimate)
+		if err != nil {
+			return fmt.Errorf("invalid estimate %v: %w", estimate, err)
+		}
+		create.EstimatePoint = estimateID
 	}
 
 	// Create work item

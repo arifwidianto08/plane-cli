@@ -38,12 +38,12 @@ type WorkItemCreate struct {
 	Name          string   `json:"name"`
 	Description   string   `json:"description,omitempty"`
 	State         string   `json:"state,omitempty"`
-	Priority      int      `json:"priority,omitempty"`
+	Priority      string   `json:"priority,omitempty"`
 	Assignees     []string `json:"assignees,omitempty"`
 	Labels        []string `json:"labels,omitempty"`
 	StartDate     string   `json:"start_date,omitempty"`
 	TargetDate    string   `json:"target_date,omitempty"`
-	EstimatePoint float64  `json:"estimate_point,omitempty"`
+	EstimatePoint string   `json:"estimate_point,omitempty"`
 	Module        string   `json:"module,omitempty"`
 	Cycle         string   `json:"cycle,omitempty"`
 	Parent        string   `json:"parent,omitempty"`
@@ -113,6 +113,24 @@ type Cycle struct {
 	Name        string `json:"name"`
 	ProjectID   string `json:"project_id"`
 	WorkspaceID string `json:"workspace_id"`
+}
+
+// Estimate represents an estimate configuration in a project
+type Estimate struct {
+	ID          string          `json:"id"`
+	Name        string          `json:"name"`
+	Type        string          `json:"type"`
+	Points      []EstimatePoint `json:"points"`
+	ProjectID   string          `json:"project_id"`
+	WorkspaceID string          `json:"workspace_id"`
+}
+
+// EstimatePoint represents a single point value in an estimate
+type EstimatePoint struct {
+	ID          string `json:"id"`
+	Key         int    `json:"key"`
+	Value       string `json:"value"`
+	Description string `json:"description"`
 }
 
 // Module represents a module in a project
@@ -258,5 +276,19 @@ func ParsePriority(s string) int {
 		return PriorityLow
 	default:
 		return PriorityMedium
+	}
+}
+
+// ParsePriorityString parses a priority string to API format (lowercase string)
+func ParsePriorityString(s string) string {
+	switch s {
+	case "urgent", "Urgent", "0":
+		return "urgent"
+	case "high", "High", "1":
+		return "high"
+	case "low", "Low", "3":
+		return "low"
+	default:
+		return "medium"
 	}
 }

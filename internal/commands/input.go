@@ -3,6 +3,7 @@ package commands
 import (
 	"errors"
 	"fmt"
+	"os"
 	"strconv"
 
 	"github.com/AlecAivazis/survey/v2"
@@ -159,4 +160,13 @@ func askFloat(message string) (float64, error) {
 		return 0, fmt.Errorf("please enter a valid number")
 	}
 	return num, nil
+}
+
+// readFileContent reads content from a file
+func readFileContent(path string) (string, error) {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	return string(content), nil
 }

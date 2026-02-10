@@ -62,10 +62,11 @@ func runInteractive(cmd *cobra.Command, args []string) error {
 
 		options := []string{
 			"📋 Work Items - Update single work item",
-			"⚡ Bulk Update - Update multiple work items at once",
-			"📦 Modules - Create, update, delete project modules",
-			"🏷️  Labels - Manage project labels and tags",
-			"📄 Pages - Create and manage project documentation pages",
+			"⚡ Work Items - Bulk Update multiple items",
+			"➕ Work Items - Bulk Create multiple items",
+			"📦 Modules - Manage project modules",
+			"🏷️  Labels - Manage project labels",
+			"📄 Pages - Manage project documentation",
 			"🚪 Exit",
 		}
 
@@ -90,21 +91,26 @@ func runInteractive(cmd *cobra.Command, args []string) error {
 			}
 
 		case 2:
-			if err := runModuleInteractiveSubmenu(client); err != nil {
+			if err := runBulkCreateInteractive(client); err != nil {
 				fmt.Printf("\n❌ Error: %v\n", err)
 			}
 
 		case 3:
-			if err := runLabelInteractiveSubmenu(client); err != nil {
+			if err := runModuleInteractiveSubmenu(client); err != nil {
 				fmt.Printf("\n❌ Error: %v\n", err)
 			}
 
 		case 4:
-			if err := runPageInteractiveSubmenu(client); err != nil {
+			if err := runLabelInteractiveSubmenu(client); err != nil {
 				fmt.Printf("\n❌ Error: %v\n", err)
 			}
 
 		case 5:
+			if err := runPageInteractiveSubmenu(client); err != nil {
+				fmt.Printf("\n❌ Error: %v\n", err)
+			}
+
+		case 6:
 			fmt.Println("\n👋 Goodbye!")
 			return nil
 		}
@@ -561,4 +567,128 @@ func chooseBulkUpdateFields(client *plane.Client, projectID string, workItems []
 			return nil, nil
 		}
 	}
+}
+
+// runBulkCreateInteractive handles interactive bulk creation
+func runBulkCreateInteractive(client *plane.Client) error {
+	fmt.Println("\n" + strings.Repeat("-", 70))
+	fmt.Println("                    ➕ BULK CREATE WORK ITEMS")
+	fmt.Println(strings.Repeat("-", 70))
+
+	// Step 1: Select Project
+	project, err := selectProjectInteractive(client)
+	if err != nil {
+		return err
+	}
+
+	// Step 2: Collect titles
+	titles, err := collectTitlesInteractive()
+	if err != nil {
+		return err
+	}
+
+	// Step 3: Get common attributes
+	attrs, err := selectCommonAttributes(client, project.ID)
+	if err != nil {
+		return err
+	}
+
+	// Parse priority
+	priorityStr := attrs.Priority
+	if priorityStr == "" {
+		priorityStr = "medium" // default
+	}
+
+	// Convert state name to UUID
+	var stateID string
+	if attrs.State != "" {
+		stateID, _ = client.GetStateByName(project.ID, attrs.State)
+	}
+
+	// Convert estimate value to UUID
+	var estimateID string
+	if attrs.EstimatePoint > 0 {
+		estimateID, _ = client.GetEstimatePointByValue(project.ID, attrs.EstimatePoint)
+	}
+
+	// Preview
+	fmt.Println("\n" + strings.Repeat("=", 70))
+	fmt.Println("                    📋 BULK CREATE PREVIEW")
+	fmt.Println(strings.Repeat("=", 70))
+	fmt.Printf("Project: %s (%s)\n", project.Name, project.Identifier)
+	fmt.Printf("Number of work items to create: %d\n\n", len(titles))
+
+	fmt.Println("Titles:")
+	for i, title := range titles {
+		fmt.Printf("  %d. %s\n", i+1, title)
+	}
+
+	fmt.Println("\nCommon attributes:")
+	if len(attrs.Assignees) > 0 {
+		fmt.Printf("  • Assignees: %d selected\n", len(attrs.Assignees))
+	}
+	if attrs.EstimatePoint > 0 {
+		fmt.Printf("  • Estimate: %.1f points\n", attrs.EstimatePoint)
+	}
+	if len(attrs.Labels) > 0 {
+		fmt.Printf("  • Labels: %d selected\n", len(attrs.Labels))
+	}
+	if attrs.Module != "" {
+		fmt.Printf("  • Module: %s\n", attrs.Module)
+	}
+	if attrs.State != "" {
+		fmt.Printf("  • State: %s\n", attrs.State)
+	}
+	fmt.Printf("  • Priority: %s\n", plane.GetPriorityName(plane.ParsePriority(priorityStr)))
+	if attrs.Description != "" {
+		fmt.Printf("  • Description: %d characters\n", len(attrs.Description))
+	}
+
+	fmt.Println(strings.Repeat("=", 70))
+
+	// Confirm
+	confirmed, err := confirm("\nCreate these work items?")
+	if err != nil {
+		return err
+	}
+	if !confirmed {
+		fmt.Println("\n❌ Creation cancelled.")
+		return nil
+	}
+
+	// Create work items
+	fmt.Printf("\n🔄 Creating %d work items...\n\n", len(titles))
+
+	successCount := 0
+	failCount := 0
+
+	for _, title := range titles {
+		create := &plane.WorkItemCreate{
+			Name:          title,
+			Description:   attrs.Description,
+			State:         stateID,
+			Priority:      plane.ParsePriorityString(priorityStr),
+			Assignees:     attrs.Assignees,
+			Labels:        attrs.Labels,
+			EstimatePoint: estimateID,
+			Module:        attrs.Module,
+		}
+
+		workItem, err := client.CreateWorkItem(project.ID, create)
+		if err != nil {
+			fmt.Printf("  ❌ Failed: %s - %v\n", title, err)
+			failCount++
+		} else {
+			fmt.Printf("  ✅ Created: [%d] %s\n", workItem.SequenceID, title)
+			successCount++
+		}
+	}
+
+	fmt.Println("\n" + strings.Repeat("=", 70))
+	fmt.Printf("✅ Completed: %d/%d work items created successfully\n", successCount, len(titles))
+	if failCount > 0 {
+		fmt.Printf("❌ Failed: %d work items\n", failCount)
+	}
+
+	return nil
 }
