@@ -1,6 +1,7 @@
 package plane
 
 import (
+	"encoding/json"
 	"fmt"
 )
 
@@ -12,13 +13,33 @@ func (c *Client) GetWorkspaceMembers() ([]Member, error) {
 
 	endpoint := fmt.Sprintf("/api/v1/workspaces/%s/members/", c.workspace)
 
+	resp, err := c.doRequest("GET", endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get workspace members: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Try to decode as array first (direct response)
+	var membersArray []Member
+	if err := json.NewDecoder(resp.Body).Decode(&membersArray); err == nil {
+		return membersArray, nil
+	}
+
+	// If that fails, try as object with results field
 	var response struct {
 		Count   int      `json:"count"`
 		Results []Member `json:"results"`
 	}
 
-	if err := c.get(endpoint, &response); err != nil {
+	// Need to re-read body, so make request again
+	resp2, err := c.doRequest("GET", endpoint, nil)
+	if err != nil {
 		return nil, fmt.Errorf("failed to get workspace members: %w", err)
+	}
+	defer resp2.Body.Close()
+
+	if err := json.NewDecoder(resp2.Body).Decode(&response); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
 	return response.Results, nil
@@ -35,13 +56,33 @@ func (c *Client) GetProjectMembers(projectID string) ([]Member, error) {
 
 	endpoint := fmt.Sprintf("/api/v1/workspaces/%s/projects/%s/members/", c.workspace, projectID)
 
+	resp, err := c.doRequest("GET", endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get project members: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Try to decode as array first (direct response)
+	var membersArray []Member
+	if err := json.NewDecoder(resp.Body).Decode(&membersArray); err == nil {
+		return membersArray, nil
+	}
+
+	// If that fails, try as object with results field
 	var response struct {
 		Count   int      `json:"count"`
 		Results []Member `json:"results"`
 	}
 
-	if err := c.get(endpoint, &response); err != nil {
+	// Need to re-read body, so make request again
+	resp2, err := c.doRequest("GET", endpoint, nil)
+	if err != nil {
 		return nil, fmt.Errorf("failed to get project members: %w", err)
+	}
+	defer resp2.Body.Close()
+
+	if err := json.NewDecoder(resp2.Body).Decode(&response); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
 	return response.Results, nil

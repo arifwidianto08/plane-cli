@@ -55,7 +55,7 @@ func runList(cmd *cobra.Command, args []string) error {
 	// Load configuration
 	cfg, err := config.Load()
 	if err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
+		return fmt.Errorf("%w\n\n💡 To configure the CLI, run: plane-cli configure", err)
 	}
 
 	// Parse flags

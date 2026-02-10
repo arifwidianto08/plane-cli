@@ -94,16 +94,30 @@ func (m *Matcher) IsMatch(pattern, text string) bool {
 }
 
 // normalizeScore converts raw fuzzy score to 0-100 scale
-// This is a simple normalization - adjust as needed
+// Adjusted to be more lenient with short patterns
 func normalizeScore(rawScore, patternLength int) int {
 	if rawScore <= 0 || patternLength <= 0 {
 		return 0
 	}
 
-	// Calculate percentage based on pattern length
-	// Maximum possible score for exact match is roughly patternLength * 2
-	maxScore := patternLength * 3
+	// For short patterns (2-3 chars), be more lenient
+	// Maximum possible score varies by pattern length
+	var maxScore int
+	switch {
+	case patternLength <= 2:
+		maxScore = patternLength * 2 // More lenient for very short patterns
+	case patternLength <= 4:
+		maxScore = patternLength * 3
+	default:
+		maxScore = patternLength * 4
+	}
+
 	percentage := (rawScore * 100) / maxScore
+
+	// Boost score for short exact matches
+	if patternLength <= 3 && rawScore >= patternLength {
+		percentage += 30 // Boost short matches
+	}
 
 	if percentage > 100 {
 		return 100

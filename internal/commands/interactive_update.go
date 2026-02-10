@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +11,7 @@ import (
 	"plane-cli/internal/fuzzy"
 	"plane-cli/internal/plane"
 
+	"github.com/AlecAivazis/survey/v2"
 	"github.com/spf13/cobra"
 )
 
@@ -71,12 +71,10 @@ func runInteractiveUpdate(cmd *cobra.Command, args []string) error {
 	}
 	client.SetWorkspace(workspace)
 
-	reader := bufio.NewReader(os.Stdin)
-
 	// Step 1: Select Project
 	var project *plane.Project
 	if projectID == "" {
-		project, err = selectProjectInteractive(client, reader)
+		project, err = selectProjectInteractive(client)
 		if err != nil {
 			return err
 		}
@@ -91,13 +89,13 @@ func runInteractiveUpdate(cmd *cobra.Command, args []string) error {
 	}
 
 	// Step 2: Search for Work Item
-	workItem, err := searchAndSelectWorkItem(client, projectID, reader, minScore)
+	workItem, err := searchAndSelectWorkItem(client, projectID, minScore)
 	if err != nil {
 		return err
 	}
 
 	// Step 3: Choose what to update
-	update, err := chooseUpdateFields(client, projectID, reader)
+	update, err := chooseUpdateFields(client, projectID)
 	if err != nil {
 		return err
 	}
@@ -113,11 +111,12 @@ func runInteractiveUpdate(cmd *cobra.Command, args []string) error {
 	fmt.Printf("   Work Item: %s-%d (%s)\n", project.Identifier, workItem.SequenceID, workItem.Name)
 	printUpdatePreview(update)
 
-	fmt.Print("\nApply these changes? (y/n): ")
-	confirm, _ := reader.ReadString('\n')
-	confirm = strings.TrimSpace(strings.ToLower(confirm))
+	confirmed, err := confirm("\nApply these changes?")
+	if err != nil {
+		return err
+	}
 
-	if confirm != "y" && confirm != "yes" {
+	if !confirmed {
 		fmt.Println("Update cancelled.")
 		return nil
 	}
@@ -138,7 +137,7 @@ func runInteractiveUpdate(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func selectProjectInteractive(client *plane.Client, reader *bufio.Reader) (*plane.Project, error) {
+func selectProjectInteractive(client *plane.Client) (*plane.Project, error) {
 	projects, err := client.GetProjects()
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch projects: %w", err)
@@ -154,41 +153,31 @@ func selectProjectInteractive(client *plane.Client, reader *bufio.Reader) (*plan
 	}
 
 	fmt.Println("\n📁 Step 1: Select a Project")
-	fmt.Println(strings.Repeat("-", 70))
-	fmt.Printf("%-5s %-20s %s\n", "#", "IDENTIFIER", "NAME")
-	fmt.Println(strings.Repeat("-", 70))
 
-	for i, p := range projects {
-		fmt.Printf("%-5d %-20s %s\n", i+1, p.Identifier, truncate(p.Name, 40))
+	// Build options list
+	var options []string
+	for _, p := range projects {
+		options = append(options, fmt.Sprintf("%s (%s)", p.Name, p.Identifier))
 	}
 
-	fmt.Println(strings.Repeat("-", 70))
-
-	for {
-		fmt.Print("\nEnter project number: ")
-		input, _ := reader.ReadString('\n')
-		input = strings.TrimSpace(input)
-
-		num, err := strconv.Atoi(input)
-		if err != nil || num < 1 || num > len(projects) {
-			fmt.Println("❌ Invalid selection. Please try again.")
-			continue
-		}
-
-		selected := &projects[num-1]
-		fmt.Printf("✓ Selected: %s\n", selected.Name)
-		return selected, nil
+	idx, err := selectOption("Select a project:", options)
+	if err != nil {
+		return nil, err
 	}
+
+	selected := &projects[idx]
+	fmt.Printf("✓ Selected: %s\n", selected.Name)
+	return selected, nil
 }
 
-func searchAndSelectWorkItem(client *plane.Client, projectID string, reader *bufio.Reader, minScore int) (*plane.WorkItem, error) {
+func searchAndSelectWorkItem(client *plane.Client, projectID string, minScore int) (*plane.WorkItem, error) {
 	fmt.Println("\n🔍 Step 2: Find Work Item")
-	fmt.Println(strings.Repeat("-", 70))
 
 	for {
-		fmt.Print("\nEnter search term (or part of the title): ")
-		searchTerm, _ := reader.ReadString('\n')
-		searchTerm = strings.TrimSpace(searchTerm)
+		searchTerm, err := input("Enter search term (or part of the title):")
+		if err != nil {
+			return nil, err
+		}
 
 		if searchTerm == "" {
 			fmt.Println("❌ Please enter a search term.")
@@ -217,41 +206,49 @@ func searchAndSelectWorkItem(client *plane.Client, projectID string, reader *buf
 		matcher := fuzzy.NewMatcher(minScore)
 		matches := matcher.FindMatches(searchTerm, titles)
 
+		// If no fuzzy matches, try substring matching as fallback
+		if len(matches) == 0 {
+			searchLower := strings.ToLower(searchTerm)
+			for i, title := range titles {
+				if strings.Contains(strings.ToLower(title), searchLower) {
+					matches = append(matches, fuzzy.MatchResult{
+						Index: i,
+						Score: 50, // Substring match gets 50%
+					})
+				}
+			}
+		}
+
 		if len(matches) == 0 {
 			fmt.Printf("❌ No work items found matching '%s'.\n", searchTerm)
-			fmt.Print("Try again? (y/n): ")
-			retry, _ := reader.ReadString('\n')
-			retry = strings.TrimSpace(strings.ToLower(retry))
-			if retry == "y" || retry == "yes" {
+			retry, err := confirm("Try again?")
+			if err != nil {
+				return nil, err
+			}
+			if retry {
 				continue
 			}
 			return nil, fmt.Errorf("no matches found")
 		}
 
-		// Show matches
-		fmt.Printf("\nFound %d match(es):\n\n", len(matches))
-		fmt.Printf("%-5s %-10s %-40s %s\n", "#", "ID", "TITLE", "SCORE")
-		fmt.Println(strings.Repeat("-", 70))
-
-		for i, match := range matches {
+		// Build options from matches
+		fmt.Printf("\nFound %d match(es):\n", len(matches))
+		var options []string
+		for _, match := range matches {
 			item := workItems[match.Index]
-			fmt.Printf("%-5d %-10d %-40s %d%%\n", i+1, item.SequenceID, truncate(item.Name, 38), match.Score)
+			options = append(options, fmt.Sprintf("[%d] %s (Score: %d%%)", item.SequenceID, truncate(item.Name, 40), match.Score))
 		}
-
-		fmt.Println(strings.Repeat("-", 70))
 
 		// Get selection
-		fmt.Print("\nSelect work item number: ")
-		input, _ := reader.ReadString('\n')
-		input = strings.TrimSpace(input)
-
-		num, err := strconv.Atoi(input)
-		if err != nil || num < 1 || num > len(matches) {
-			fmt.Println("❌ Invalid selection.")
-			continue
+		idx, err := selectOption("Select work item:", options)
+		if err != nil {
+			if err.Error() == "cancelled by user" {
+				continue
+			}
+			return nil, err
 		}
 
-		selected := &workItems[matches[num-1].Index]
+		selected := &workItems[matches[idx].Index]
 		fmt.Printf("✓ Selected: %s (ID: %d)\n", selected.Name, selected.SequenceID)
 		return selected, nil
 	}
@@ -284,158 +281,138 @@ func fetchAllWorkItemsForProject(client *plane.Client, projectID string) ([]plan
 	return allItems, nil
 }
 
-func chooseUpdateFields(client *plane.Client, projectID string, reader *bufio.Reader) (*plane.WorkItemUpdate, error) {
+func chooseUpdateFields(client *plane.Client, projectID string) (*plane.WorkItemUpdate, error) {
 	fmt.Println("\n✏️  Step 3: What would you like to update?")
-	fmt.Println(strings.Repeat("-", 70))
-	fmt.Println("1. Description")
-	fmt.Println("2. Title")
-	fmt.Println("3. State")
-	fmt.Println("4. Priority")
-	fmt.Println("5. Assignees")
-	fmt.Println("6. Estimate Points")
-	fmt.Println("7. Module")
-	fmt.Println("8. Multiple fields")
-	fmt.Println("9. Cancel")
-	fmt.Println(strings.Repeat("-", 70))
 
-	fmt.Print("\nEnter your choice (1-9): ")
-	choice, _ := reader.ReadString('\n')
-	choice = strings.TrimSpace(choice)
+	options := []string{
+		"Description",
+		"Title",
+		"State",
+		"Priority",
+		"Assignees",
+		"Estimate Points",
+		"Module",
+		"Multiple fields",
+		"Cancel",
+	}
+
+	idx, err := selectOption("Select an option:", options)
+	if err != nil {
+		return nil, err
+	}
 
 	update := &plane.WorkItemUpdate{}
 
-	switch choice {
-	case "1":
+	switch idx {
+	case 0:
 		// Description - choose between file or direct text
-		desc, err := selectDescriptionSource(reader)
+		desc, err := selectDescriptionSource()
 		if err != nil {
 			return nil, err
 		}
 		update.DescriptionHTML = desc
 
-	case "2":
+	case 1:
 		// Title
-		fmt.Print("\nEnter new title: ")
-		title, _ := reader.ReadString('\n')
-		update.Name = strings.TrimSpace(title)
+		title, err := input("Enter new title:")
+		if err != nil {
+			return nil, err
+		}
+		update.Name = title
 
-	case "3":
+	case 2:
 		// State
-		state, err := selectState(reader)
+		state, err := selectState()
 		if err != nil {
 			return nil, err
 		}
 		update.State = state
 
-	case "4":
+	case 3:
 		// Priority
-		priority, err := selectPriority(reader)
+		priority, err := selectPriority()
 		if err != nil {
 			return nil, err
 		}
 		update.Priority = priority
 
-	case "5":
+	case 4:
 		// Assignees
-		assignees, err := selectAssignees(client, projectID, reader)
+		assignees, err := selectAssignees(client, projectID)
 		if err != nil {
 			return nil, err
 		}
 		update.Assignees = assignees
 
-	case "6":
+	case 5:
 		// Estimate Points
-		estimate, err := selectEstimate(reader)
+		estimate, err := selectEstimate()
 		if err != nil {
 			return nil, err
 		}
 		update.EstimatePoint = estimate
 
-	case "7":
+	case 6:
 		// Module
-		module, err := selectModule(client, projectID, reader)
+		module, err := selectModule(client, projectID)
 		if err != nil {
 			return nil, err
 		}
 		update.Module = module
 
-	case "8":
+	case 7:
 		// Multiple fields
-		return chooseMultipleFields(client, projectID, reader)
+		return chooseMultipleFields(client, projectID)
 
-	case "9", "cancel", "c":
-		return nil, nil
-
-	default:
-		fmt.Println("❌ Invalid choice.")
+	case 8:
+		// Cancel
 		return nil, nil
 	}
 
 	return update, nil
 }
 
-func selectDescriptionSource(reader *bufio.Reader) (string, error) {
+func selectDescriptionSource() (string, error) {
 	fmt.Println("\n📝 Update Description")
-	fmt.Println(strings.Repeat("-", 70))
-	fmt.Println("1. Load from file (markdown or text file)")
-	fmt.Println("2. Enter text directly")
-	fmt.Println("3. Cancel")
-	fmt.Println(strings.Repeat("-", 70))
+
+	options := []string{
+		"Load from file (markdown or text file)",
+		"Enter text directly",
+		"Cancel",
+	}
 
 	for {
-		fmt.Print("\nEnter your choice (1-3): ")
-		choice, _ := reader.ReadString('\n')
-		choice = strings.TrimSpace(choice)
+		idx, err := selectOption("How would you like to enter the description?", options)
+		if err != nil {
+			return "", err
+		}
 
-		switch choice {
-		case "1":
-			return selectDescriptionFile(reader)
-		case "2":
-			return enterDescriptionDirectly(reader)
-		case "3", "cancel", "c":
+		switch idx {
+		case 0:
+			return selectDescriptionFile()
+		case 1:
+			return enterDescriptionDirectly()
+		case 2:
 			return "", fmt.Errorf("description update cancelled")
-		default:
-			fmt.Println("❌ Invalid choice. Please enter 1, 2, or 3.")
 		}
 	}
 }
 
-func enterDescriptionDirectly(reader *bufio.Reader) (string, error) {
+func enterDescriptionDirectly() (string, error) {
 	fmt.Println("\n✏️  Enter Description")
-	fmt.Println(strings.Repeat("-", 70))
-	fmt.Println("Enter your description below (supports multiple lines).")
-	fmt.Println("Type \":done\" on a new line to finish, or press Enter twice.")
-	fmt.Println(strings.Repeat("-", 70))
-	fmt.Println()
 
-	var lines []string
-	emptyLineCount := 0
-
-	for {
-		line, err := reader.ReadString('\n')
-		if err != nil {
-			return "", fmt.Errorf("error reading input: %w", err)
+	var description string
+	prompt := &survey.Multiline{
+		Message: "Enter your description (supports multiple lines):",
+	}
+	err := survey.AskOne(prompt, &description)
+	if err != nil {
+		if err.Error() == "interrupt" {
+			return "", fmt.Errorf("description entry cancelled")
 		}
-
-		// Check for :done sentinel
-		if strings.TrimSpace(line) == ":done" {
-			break
-		}
-
-		// Check for double empty line (Enter twice)
-		if strings.TrimSpace(line) == "" {
-			emptyLineCount++
-			if emptyLineCount >= 2 {
-				break
-			}
-		} else {
-			emptyLineCount = 0
-		}
-
-		lines = append(lines, line)
+		return "", err
 	}
 
-	description := strings.Join(lines, "")
 	description = strings.TrimSpace(description)
 
 	if description == "" {
@@ -446,9 +423,8 @@ func enterDescriptionDirectly(reader *bufio.Reader) (string, error) {
 	return description, nil
 }
 
-func selectDescriptionFile(reader *bufio.Reader) (string, error) {
+func selectDescriptionFile() (string, error) {
 	fmt.Println("\n📝 Select Description File")
-	fmt.Println(strings.Repeat("-", 70))
 
 	// Check for markdown files in common locations
 	searchDirs := []string{
@@ -468,55 +444,44 @@ func selectDescriptionFile(reader *bufio.Reader) (string, error) {
 
 	if len(mdFiles) > 0 {
 		fmt.Println("\nAvailable markdown files:")
-		for i, file := range mdFiles {
-			fmt.Printf("%d. %s\n", i+1, file)
+		var options []string
+		for _, file := range mdFiles {
+			options = append(options, file)
 		}
-		fmt.Println("0. Enter custom path")
-		fmt.Println(strings.Repeat("-", 70))
+		options = append(options, "Enter custom path")
 
-		for {
-			fmt.Print("\nSelect file number (or 0 for custom path): ")
-			input, _ := reader.ReadString('\n')
-			input = strings.TrimSpace(input)
+		idx, err := selectOption("Select a file:", options)
+		if err != nil {
+			return "", err
+		}
 
-			num, err := strconv.Atoi(input)
-			if err != nil {
-				fmt.Println("❌ Invalid selection.")
-				continue
-			}
-
-			if num == 0 {
-				break // Go to custom path input
-			}
-
-			if num < 1 || num > len(mdFiles) {
-				fmt.Println("❌ Invalid selection.")
-				continue
-			}
-
-			content, err := os.ReadFile(mdFiles[num-1])
+		if idx < len(mdFiles) {
+			content, err := os.ReadFile(mdFiles[idx])
 			if err != nil {
 				return "", fmt.Errorf("failed to read file: %w", err)
 			}
 
-			fmt.Printf("✓ Loaded %d characters from %s\n", len(content), mdFiles[num-1])
+			fmt.Printf("✓ Loaded %d characters from %s\n", len(content), mdFiles[idx])
 			return string(content), nil
 		}
+		// Fall through to custom path if "Enter custom path" selected
 	}
 
 	// Custom path input
 	for {
-		fmt.Print("\nEnter path to description file: ")
-		path, _ := reader.ReadString('\n')
-		path = strings.TrimSpace(path)
+		path, err := input("Enter path to description file:")
+		if err != nil {
+			return "", err
+		}
 
 		content, err := os.ReadFile(path)
 		if err != nil {
 			fmt.Printf("❌ Failed to read file: %v\n", err)
-			fmt.Print("Try again? (y/n): ")
-			retry, _ := reader.ReadString('\n')
-			retry = strings.TrimSpace(strings.ToLower(retry))
-			if retry == "y" || retry == "yes" {
+			retry, err := confirm("Try again?")
+			if err != nil {
+				return "", err
+			}
+			if retry {
 				continue
 			}
 			return "", fmt.Errorf("file selection cancelled")
@@ -527,153 +492,137 @@ func selectDescriptionFile(reader *bufio.Reader) (string, error) {
 	}
 }
 
-func selectState(reader *bufio.Reader) (string, error) {
+func selectState() (string, error) {
 	fmt.Println("\n📊 Select State")
-	fmt.Println(strings.Repeat("-", 70))
-	fmt.Println("1. Backlog")
-	fmt.Println("2. Todo")
-	fmt.Println("3. In Progress")
-	fmt.Println("4. Done")
-	fmt.Println("5. Cancelled")
-	fmt.Println(strings.Repeat("-", 70))
 
-	for {
-		fmt.Print("\nEnter state number (1-5): ")
-		input, _ := reader.ReadString('\n')
-		input = strings.TrimSpace(input)
-
-		switch input {
-		case "1":
-			return "Backlog", nil
-		case "2":
-			return "Todo", nil
-		case "3":
-			return "In Progress", nil
-		case "4":
-			return "Done", nil
-		case "5":
-			return "Cancelled", nil
-		default:
-			fmt.Println("❌ Invalid selection.")
-		}
+	options := []string{
+		"Backlog",
+		"Todo",
+		"In Progress",
+		"Done",
+		"Cancelled",
 	}
+
+	idx, err := selectOption("Select state:", options)
+	if err != nil {
+		return "", err
+	}
+
+	return options[idx], nil
 }
 
-func selectPriority(reader *bufio.Reader) (string, error) {
+func selectPriority() (string, error) {
 	fmt.Println("\n🎯 Select Priority")
-	fmt.Println(strings.Repeat("-", 70))
-	fmt.Println("1. Urgent")
-	fmt.Println("2. High")
-	fmt.Println("3. Medium")
-	fmt.Println("4. Low")
-	fmt.Println(strings.Repeat("-", 70))
 
-	for {
-		fmt.Print("\nEnter priority number (1-4): ")
-		input, _ := reader.ReadString('\n')
-		input = strings.TrimSpace(input)
-
-		switch input {
-		case "1":
-			return "urgent", nil
-		case "2":
-			return "high", nil
-		case "3":
-			return "medium", nil
-		case "4":
-			return "low", nil
-		default:
-			fmt.Println("❌ Invalid selection.")
-		}
+	options := []string{
+		"urgent",
+		"high",
+		"medium",
+		"low",
 	}
+
+	labels := []string{
+		"Urgent",
+		"High",
+		"Medium",
+		"Low",
+	}
+
+	idx, err := selectOption("Select priority:", labels)
+	if err != nil {
+		return "", err
+	}
+
+	return options[idx], nil
 }
 
-func chooseMultipleFields(client *plane.Client, projectID string, reader *bufio.Reader) (*plane.WorkItemUpdate, error) {
+func chooseMultipleFields(client *plane.Client, projectID string) (*plane.WorkItemUpdate, error) {
 	update := &plane.WorkItemUpdate{}
 
 	for {
-		fmt.Println("\n✏️  Select fields to update (choose one at a time, 'done' when finished):")
-		fmt.Println("1. Description (from file or enter text)")
-		fmt.Println("2. Title")
-		fmt.Println("3. State")
-		fmt.Println("4. Priority")
-		fmt.Println("5. Assignees")
-		fmt.Println("6. Estimate Points")
-		fmt.Println("7. Module")
-		fmt.Println("8. Done")
-		fmt.Println(strings.Repeat("-", 70))
+		fmt.Println("\n✏️  Select fields to update:")
 
-		fmt.Print("\nChoice: ")
-		choice, _ := reader.ReadString('\n')
-		choice = strings.TrimSpace(choice)
+		options := []string{
+			"Description (from file or enter text)",
+			"Title",
+			"State",
+			"Priority",
+			"Assignees",
+			"Estimate Points",
+			"Module",
+			"Done - Finish selection",
+		}
 
-		switch choice {
-		case "1":
-			desc, err := selectDescriptionSource(reader)
+		idx, err := selectOption("Select a field to update:", options)
+		if err != nil {
+			return nil, err
+		}
+
+		switch idx {
+		case 0:
+			desc, err := selectDescriptionSource()
 			if err != nil {
 				continue
 			}
 			update.DescriptionHTML = desc
 			fmt.Println("✓ Description added to update")
 
-		case "2":
-			fmt.Print("\nEnter new title: ")
-			title, _ := reader.ReadString('\n')
-			update.Name = strings.TrimSpace(title)
+		case 1:
+			title, err := input("Enter new title:")
+			if err != nil {
+				continue
+			}
+			update.Name = title
 			fmt.Println("✓ Title added to update")
 
-		case "3":
-			state, err := selectState(reader)
+		case 2:
+			state, err := selectState()
 			if err != nil {
 				continue
 			}
 			update.State = state
 			fmt.Printf("✓ State set to: %s\n", state)
 
-		case "4":
-			priority, err := selectPriority(reader)
+		case 3:
+			priority, err := selectPriority()
 			if err != nil {
 				continue
 			}
 			update.Priority = priority
 			fmt.Printf("✓ Priority set to: %s\n", priority)
 
-		case "5":
-			assignees, err := selectAssignees(client, projectID, reader)
+		case 4:
+			assignees, err := selectAssignees(client, projectID)
 			if err != nil {
 				continue
 			}
 			update.Assignees = assignees
 			fmt.Printf("✓ Assignees set: %v\n", assignees)
 
-		case "6":
-			estimate, err := selectEstimate(reader)
+		case 5:
+			estimate, err := selectEstimate()
 			if err != nil {
 				continue
 			}
 			update.EstimatePoint = estimate
 			fmt.Printf("✓ Estimate set to: %.1f\n", estimate)
 
-		case "7":
-			module, err := selectModule(client, projectID, reader)
+		case 6:
+			module, err := selectModule(client, projectID)
 			if err != nil {
 				continue
 			}
 			update.Module = module
 			fmt.Printf("✓ Module set to: %s\n", module)
 
-		case "8", "done":
+		case 7:
 			return update, nil
-
-		default:
-			fmt.Println("❌ Invalid choice.")
 		}
 	}
 }
 
-func selectAssignees(client *plane.Client, projectID string, reader *bufio.Reader) ([]string, error) {
+func selectAssignees(client *plane.Client, projectID string) ([]string, error) {
 	fmt.Println("\n👥 Select Assignees")
-	fmt.Println(strings.Repeat("-", 70))
 
 	// Try to get project members first, fall back to workspace members
 	members, err := client.GetProjectMembers(projectID)
@@ -688,66 +637,50 @@ func selectAssignees(client *plane.Client, projectID string, reader *bufio.Reade
 		return nil, fmt.Errorf("no members found")
 	}
 
-	// Display members
-	fmt.Printf("\n%-5s %-30s %s\n", "#", "NAME", "EMAIL")
-	fmt.Println(strings.Repeat("-", 70))
-	for i, m := range members {
+	// Build options
+	var options []string
+	for _, m := range members {
 		name := m.GetDisplayName()
-		if len(name) > 28 {
-			name = name[:25] + "..."
-		}
-		email := m.Email
-		if len(email) > 25 {
-			email = email[:22] + "..."
-		}
-		fmt.Printf("%-5d %-30s %s\n", i+1, name, email)
+		options = append(options, fmt.Sprintf("%s (%s)", name, m.Email))
 	}
-	fmt.Println(strings.Repeat("-", 70))
-	fmt.Println("Enter numbers separated by commas (e.g., 1,3,5) or 'clear' to remove all:")
 
-	fmt.Print("\nSelection: ")
-	input, _ := reader.ReadString('\n')
-	input = strings.TrimSpace(strings.ToLower(input))
-
-	if input == "clear" || input == "none" {
+	indices, err := selectMultiOption("Select assignees (use arrow keys and space to select, 'clear' to remove all):", options)
+	if err != nil {
+		if err.Error() == "cancelled by user" {
+			return nil, err
+		}
+		// Check if user wants to clear
 		return []string{}, nil
 	}
 
 	var selectedIDs []string
-	parts := strings.Split(input, ",")
-	for _, part := range parts {
-		part = strings.TrimSpace(part)
-		num, err := strconv.Atoi(part)
-		if err != nil || num < 1 || num > len(members) {
-			fmt.Printf("❌ Invalid selection: %s\n", part)
-			continue
-		}
-		selectedIDs = append(selectedIDs, members[num-1].ID)
+	for _, idx := range indices {
+		selectedIDs = append(selectedIDs, members[idx].ID)
 	}
 
 	if len(selectedIDs) == 0 {
-		return nil, fmt.Errorf("no valid selections")
+		return []string{}, nil
 	}
 
 	fmt.Printf("✓ Selected %d assignee(s)\n", len(selectedIDs))
 	return selectedIDs, nil
 }
 
-func selectEstimate(reader *bufio.Reader) (float64, error) {
+func selectEstimate() (float64, error) {
 	fmt.Println("\n📊 Enter Estimate Points")
-	fmt.Println(strings.Repeat("-", 70))
 	fmt.Println("Enter a number (e.g., 1, 2, 3, 5, 8, 13) or 0 to clear:")
 
 	for {
-		fmt.Print("\nEstimate: ")
-		input, _ := reader.ReadString('\n')
-		input = strings.TrimSpace(input)
+		result, err := input("Estimate:")
+		if err != nil {
+			return 0, err
+		}
 
-		if input == "" || input == "0" {
+		if result == "" || result == "0" {
 			return 0, nil
 		}
 
-		estimate, err := strconv.ParseFloat(input, 64)
+		estimate, err := strconv.ParseFloat(result, 64)
 		if err != nil {
 			fmt.Println("❌ Please enter a valid number.")
 			continue
@@ -762,9 +695,8 @@ func selectEstimate(reader *bufio.Reader) (float64, error) {
 	}
 }
 
-func selectModule(client *plane.Client, projectID string, reader *bufio.Reader) (string, error) {
+func selectModule(client *plane.Client, projectID string) (string, error) {
 	fmt.Println("\n📦 Select Module")
-	fmt.Println(strings.Repeat("-", 70))
 
 	modules, err := client.GetProjectModules(projectID)
 	if err != nil {
@@ -775,37 +707,23 @@ func selectModule(client *plane.Client, projectID string, reader *bufio.Reader) 
 		return "", fmt.Errorf("no modules found in this project")
 	}
 
-	// Display modules
-	fmt.Printf("\n%-5s %s\n", "#", "NAME")
-	fmt.Println(strings.Repeat("-", 50))
-	for i, m := range modules {
-		fmt.Printf("%-5d %s\n", i+1, m.Name)
+	// Build options
+	var options []string
+	for _, m := range modules {
+		options = append(options, m.Name)
 	}
-	fmt.Println(strings.Repeat("-", 50))
-	fmt.Println("0. Clear module (remove from work item)")
+	options = append(options, "Clear module (remove from work item)")
 
-	for {
-		fmt.Print("\nEnter module number: ")
-		input, _ := reader.ReadString('\n')
-		input = strings.TrimSpace(input)
-
-		num, err := strconv.Atoi(input)
-		if err != nil {
-			fmt.Println("❌ Please enter a valid number.")
-			continue
-		}
-
-		if num == 0 {
-			return "", nil
-		}
-
-		if num < 1 || num > len(modules) {
-			fmt.Println("❌ Invalid selection.")
-			continue
-		}
-
-		return modules[num-1].ID, nil
+	idx, err := selectOption("Select module:", options)
+	if err != nil {
+		return "", err
 	}
+
+	if idx == len(modules) {
+		return "", nil
+	}
+
+	return modules[idx].ID, nil
 }
 
 func printUpdatePreview(update *plane.WorkItemUpdate) {

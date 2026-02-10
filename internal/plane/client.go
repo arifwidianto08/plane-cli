@@ -90,8 +90,6 @@ func (c *Client) doRequest(method, endpoint string, body interface{}) (*http.Res
 		u.Path = u.Path + "/"
 	}
 
-	fmt.Printf("DEBUG: URL: %s\n", u.String())
-
 	// Marshal body if provided
 	var bodyReader io.Reader
 	if body != nil {
@@ -101,7 +99,6 @@ func (c *Client) doRequest(method, endpoint string, body interface{}) (*http.Res
 			return nil, fmt.Errorf("failed to marshal request body: %w", err)
 		}
 		bodyReader = bytes.NewReader(jsonBody)
-		fmt.Printf("DEBUG: Sending JSON (%d bytes): %s\n", len(jsonBody), string(jsonBody))
 	}
 
 	// Create request

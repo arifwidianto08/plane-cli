@@ -86,11 +86,25 @@ type State struct {
 
 // Label represents a label/tag in a project
 type Label struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Color       string `json:"color"`
-	ProjectID   string `json:"project_id"`
-	WorkspaceID string `json:"workspace_id"`
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Color       string    `json:"color,omitempty"`
+	ProjectID   string    `json:"project_id"`
+	WorkspaceID string    `json:"workspace_id"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+// LabelCreate represents payload for creating a label
+type LabelCreate struct {
+	Name  string `json:"name"`
+	Color string `json:"color,omitempty"`
+}
+
+// LabelUpdate represents payload for updating a label
+type LabelUpdate struct {
+	Name  string `json:"name,omitempty"`
+	Color string `json:"color,omitempty"`
 }
 
 // Cycle represents a sprint/cycle in a project
@@ -103,10 +117,63 @@ type Cycle struct {
 
 // Module represents a module in a project
 type Module struct {
-	ID          string `json:"id"`
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description,omitempty"`
+	Color       string    `json:"color,omitempty"`
+	Status      string    `json:"status,omitempty"`
+	ProjectID   string    `json:"project_id"`
+	WorkspaceID string    `json:"workspace_id"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+// ModuleCreate represents payload for creating a module
+type ModuleCreate struct {
 	Name        string `json:"name"`
-	ProjectID   string `json:"project_id"`
-	WorkspaceID string `json:"workspace_id"`
+	Description string `json:"description,omitempty"`
+	Color       string `json:"color,omitempty"`
+	Status      string `json:"status,omitempty"`
+}
+
+// ModuleUpdate represents payload for updating a module
+type ModuleUpdate struct {
+	Name        string `json:"name,omitempty"`
+	Description string `json:"description,omitempty"`
+	Color       string `json:"color,omitempty"`
+	Status      string `json:"status,omitempty"`
+}
+
+// Page represents a page/document in a project
+type Page struct {
+	ID              string    `json:"id"`
+	Name            string    `json:"name"`
+	Description     string    `json:"description,omitempty"`
+	DescriptionHTML string    `json:"description_html,omitempty"`
+	ProjectID       string    `json:"project_id"`
+	WorkspaceID     string    `json:"workspace_id"`
+	ParentID        string    `json:"parent,omitempty"`
+	Access          string    `json:"access,omitempty"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
+}
+
+// PageCreate represents payload for creating a page
+type PageCreate struct {
+	Name            string `json:"name"`
+	Description     string `json:"description,omitempty"`
+	DescriptionHTML string `json:"description_html,omitempty"`
+	ParentID        string `json:"parent,omitempty"`
+	Access          string `json:"access,omitempty"`
+}
+
+// PageUpdate represents payload for updating a page
+type PageUpdate struct {
+	Name            string `json:"name,omitempty"`
+	Description     string `json:"description,omitempty"`
+	DescriptionHTML string `json:"description_html,omitempty"`
+	ParentID        string `json:"parent,omitempty"`
+	Access          string `json:"access,omitempty"`
 }
 
 // Member represents a workspace member/user
@@ -130,6 +197,30 @@ type ListResponse struct {
 	TotalPages      int        `json:"total_pages"`
 	TotalResults    int        `json:"total_results"`
 	Results         []WorkItem `json:"results"`
+}
+
+// ModuleListResponse represents paginated modules response
+type ModuleListResponse struct {
+	Count    int      `json:"count"`
+	Results  []Module `json:"results"`
+	Next     *string  `json:"next"`
+	Previous *string  `json:"previous"`
+}
+
+// LabelListResponse represents paginated labels response
+type LabelListResponse struct {
+	Count    int     `json:"count"`
+	Results  []Label `json:"results"`
+	Next     *string `json:"next"`
+	Previous *string `json:"previous"`
+}
+
+// PageListResponse represents paginated pages response
+type PageListResponse struct {
+	Count    int     `json:"count"`
+	Results  []Page  `json:"results"`
+	Next     *string `json:"next"`
+	Previous *string `json:"previous"`
 }
 
 // Priority levels

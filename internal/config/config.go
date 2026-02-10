@@ -22,7 +22,14 @@ type Config struct {
 }
 
 // Load loads configuration from environment and config file
+// If configuration is missing, it will prompt the user interactively
 func Load() (*Config, error) {
+	// First check if we have a valid configuration
+	if !IsConfigured() {
+		// Configuration missing - the caller should handle this by calling CheckAndPromptConfig
+		return nil, fmt.Errorf("configuration not found: run 'plane-cli configure' or use interactive mode")
+	}
+
 	// Load .env file if exists
 	envFile := ".env"
 	if _, err := os.Stat(envFile); err == nil {

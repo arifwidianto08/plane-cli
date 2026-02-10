@@ -1,10 +1,7 @@
 package commands
 
 import (
-	"bufio"
 	"fmt"
-	"os"
-	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -143,36 +140,22 @@ func runProjectSelect(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// Display projects
-	fmt.Printf("\nSelect a project:\n\n")
-	fmt.Printf("%-5s %-20s %s\n", "#", "IDENTIFIER", "NAME")
-	fmt.Println(strings.Repeat("-", 70))
-
-	for i, p := range projects {
-		fmt.Printf("%-5d %-20s %s\n", i+1, p.Identifier, p.Name)
+	// Build options
+	var options []string
+	for _, p := range projects {
+		options = append(options, fmt.Sprintf("%s (%s)", p.Name, p.Identifier))
 	}
 
-	fmt.Println()
-
-	// Get user input
-	reader := bufio.NewReader(os.Stdin)
-	fmt.Print("Enter number (or 'cancel'): ")
-	input, _ := reader.ReadString('\n')
-	input = strings.TrimSpace(strings.ToLower(input))
-
-	if input == "cancel" || input == "c" {
-		fmt.Println("Selection cancelled.")
-		return nil
+	idx, err := selectOption("\nSelect a project:", options)
+	if err != nil {
+		if err.Error() == "cancelled by user" {
+			fmt.Println("Selection cancelled.")
+			return nil
+		}
+		return err
 	}
 
-	// Parse selection
-	num, err := strconv.Atoi(input)
-	if err != nil || num < 1 || num > len(projects) {
-		fmt.Println("Invalid selection.")
-		return nil
-	}
-
-	selected := projects[num-1]
+	selected := projects[idx]
 	fmt.Printf("\n✓ Selected project: %s (%s)\n", selected.Name, selected.Identifier)
 	fmt.Printf("\nUse this project with: --project %s\n", selected.Identifier)
 	fmt.Printf("Or set as default in config.yaml:\n  defaults:\n    project: \"%s\"\n", selected.Identifier)
@@ -195,32 +178,17 @@ func InteractiveProjectSelector(client *plane.Client) (*plane.Project, error) {
 		return &projects[0], nil
 	}
 
-	// Display projects
-	fmt.Printf("\nSelect a project:\n\n")
-	fmt.Printf("%-5s %-20s %s\n", "#", "IDENTIFIER", "NAME")
-	fmt.Println(strings.Repeat("-", 70))
-
-	for i, p := range projects {
-		fmt.Printf("%-5d %-20s %s\n", i+1, p.Identifier, p.Name)
+	// Build options list
+	var options []string
+	for _, p := range projects {
+		options = append(options, fmt.Sprintf("%s (%s)", p.Name, p.Identifier))
 	}
 
-	fmt.Println()
-
-	// Get user input
-	reader := bufio.NewReader(os.Stdin)
-	fmt.Print("Enter number (or 'cancel'): ")
-	input, _ := reader.ReadString('\n')
-	input = strings.TrimSpace(strings.ToLower(input))
-
-	if input == "cancel" || input == "c" {
-		return nil, fmt.Errorf("selection cancelled")
+	// Use survey for selection
+	idx, err := selectOption("Select a project:", options)
+	if err != nil {
+		return nil, err
 	}
 
-	// Parse selection
-	num, err := strconv.Atoi(input)
-	if err != nil || num < 1 || num > len(projects) {
-		return nil, fmt.Errorf("invalid selection")
-	}
-
-	return &projects[num-1], nil
+	return &projects[idx], nil
 }
