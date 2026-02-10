@@ -9,3 +9,6 @@ vendor/
 /plans
 /work-items
 PLAN.md
+
+# cache folder
+cached/

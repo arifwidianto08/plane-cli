@@ -1,11 +1,43 @@
 package plane
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
 )
 
-// GetEstimates retrieves all estimate configurations for a project
+// CachedEstimates represents the cached estimates data
+type CachedEstimates struct {
+	ProjectID string     `json:"project_id"`
+	Estimates []Estimate `json:"estimates"`
+}
+
+// loadCachedEstimates loads estimates from cache file
+func loadCachedEstimates(projectID string) ([]Estimate, error) {
+	// Try to load from cache file in cached directory
+	cachePath := filepath.Join(".", "cached", "estimates_cache.json")
+
+	data, err := os.ReadFile(cachePath)
+	if err != nil {
+		return nil, fmt.Errorf("cache file not found at %s: %w", cachePath, err)
+	}
+
+	var cached CachedEstimates
+	if err := json.Unmarshal(data, &cached); err != nil {
+		return nil, fmt.Errorf("failed to parse cache: %w", err)
+	}
+
+	// Verify project matches
+	if cached.ProjectID != projectID {
+		return nil, fmt.Errorf("cache is for different project: %s vs %s", cached.ProjectID, projectID)
+	}
+
+	return cached.Estimates, nil
+}
+
+// GetEstimates retrieves all estimate configurations for a project from cache
 func (c *Client) GetEstimates(projectID string) ([]Estimate, error) {
 	if c.workspace == "" {
 		return nil, fmt.Errorf("workspace is not set")
@@ -14,14 +46,8 @@ func (c *Client) GetEstimates(projectID string) ([]Estimate, error) {
 		return nil, fmt.Errorf("project ID is required")
 	}
 
-	endpoint := fmt.Sprintf("/api/v1/workspaces/%s/projects/%s/estimates/", c.workspace, projectID)
-
-	var estimates []Estimate
-	if err := c.get(endpoint, &estimates); err != nil {
-		return nil, fmt.Errorf("failed to get estimates: %w", err)
-	}
-
-	return estimates, nil
+	// Load from cache file
+	return loadCachedEstimates(projectID)
 }
 
 // GetEstimatePointByValue finds an estimate point UUID by its numeric value

@@ -155,9 +155,9 @@ func runBulkCreate(cmd *cobra.Command, args []string) error {
 	}
 
 	// If in interactive mode or missing attributes, prompt for them
-	if forceInteractive || (len(assignees) == 0 && estimate == 0 && len(labels) == 0 && moduleID == "" && description == "") {
-		// Get common attributes interactively
-		attrs, err := selectCommonAttributes(client, projectID)
+	if forceInteractive || len(assignees) == 0 || estimate == 0 || len(labels) == 0 || moduleID == "" || description == "" {
+		// Get common attributes interactively (only for missing ones)
+		attrs, err := selectCommonAttributes(client, projectID, len(assignees) == 0, estimate == 0, len(labels) == 0, moduleID == "", description == "")
 		if err != nil {
 			return err
 		}
@@ -240,7 +240,7 @@ func runBulkCreate(cmd *cobra.Command, args []string) error {
 	}
 
 	// Create work items
-	fmt.Printf("\n🔄 Creating %d work items...\n\n", len(titles))
+	fmt.Printf("\n🔄 Creating %d work items...\n", len(titles))
 
 	successCount := 0
 	failCount := 0
@@ -266,19 +266,15 @@ func runBulkCreate(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		// Convert estimate to UUID if provided
+		// Convert estimate to UUID
 		if estimate > 0 {
 			estimateID, err := client.GetEstimatePointByValue(projectID, estimate)
 			if err == nil {
 				create.EstimatePoint = estimateID
-				fmt.Printf("  ℹ️  Converted estimate %.0f to UUID: %s\n", estimate, estimateID)
 			} else {
-				fmt.Printf("  ⚠️  Warning: Could not find estimate UUID for value %.0f: %v\n", estimate, err)
+				fmt.Printf("  ⚠️  Warning: Could not find estimate for value %.0f: %v\n", estimate, err)
 			}
 		}
-
-		// Debug: Print what we're sending
-		fmt.Printf("  ℹ️  Creating with Module: %s, Estimate: %s\n", create.Module, create.EstimatePoint)
 
 		workItem, err := client.CreateWorkItem(projectID, create)
 		if err != nil {
@@ -374,7 +370,7 @@ type commonAttributes struct {
 	Description   string
 }
 
-func selectCommonAttributes(client *plane.Client, projectID string) (*commonAttributes, error) {
+func selectCommonAttributes(client *plane.Client, projectID string, needAssignees, needEstimate, needLabels, needModule, needDescription bool) (*commonAttributes, error) {
 	attrs := &commonAttributes{}
 
 	fmt.Println("\n⚙️  Select Common Attributes")
@@ -383,24 +379,42 @@ func selectCommonAttributes(client *plane.Client, projectID string) (*commonAttr
 	fmt.Println(strings.Repeat("-", 70))
 
 	for {
-		options := []string{
-			"Assignees",
-			"Estimate Points",
-			"Labels",
-			"Module",
-			"State",
-			"Priority",
-			"Description",
-			"Done - Continue to create",
+		options := []string{}
+		optionTypes := []string{}
+
+		if needAssignees {
+			options = append(options, "Assignees")
+			optionTypes = append(optionTypes, "assignees")
 		}
+		if needEstimate {
+			options = append(options, "Estimate Points")
+			optionTypes = append(optionTypes, "estimate")
+		}
+		if needLabels {
+			options = append(options, "Labels")
+			optionTypes = append(optionTypes, "labels")
+		}
+		if needModule {
+			options = append(options, "Module")
+			optionTypes = append(optionTypes, "module")
+		}
+		options = append(options, "State", "Priority")
+		optionTypes = append(optionTypes, "state", "priority")
+		if needDescription {
+			options = append(options, "Description")
+			optionTypes = append(optionTypes, "description")
+		}
+		options = append(options, "Done - Continue to create")
+		optionTypes = append(optionTypes, "done")
 
 		idx, err := selectOption("What would you like to set?", options)
 		if err != nil {
 			return nil, err
 		}
 
-		switch idx {
-		case 0: // Assignees
+		selectedType := optionTypes[idx]
+		switch selectedType {
+		case "assignees":
 			members, err := client.GetProjectMembers(projectID)
 			if err != nil {
 				members, err = client.GetWorkspaceMembers()
@@ -430,7 +444,7 @@ func selectCommonAttributes(client *plane.Client, projectID string) (*commonAttr
 			}
 			fmt.Printf("✓ Selected %d assignees\n", len(attrs.Assignees))
 
-		case 1: // Estimate
+		case "estimate":
 			estimate, err := askFloat("Enter estimate points:")
 			if err != nil {
 				continue
@@ -440,7 +454,7 @@ func selectCommonAttributes(client *plane.Client, projectID string) (*commonAttr
 				fmt.Printf("✓ Estimate set to: %.1f\n", estimate)
 			}
 
-		case 2: // Labels
+		case "labels":
 			labels, err := client.GetLabels(projectID)
 			if err != nil {
 				fmt.Printf("❌ Error fetching labels: %v\n", err)
@@ -467,7 +481,7 @@ func selectCommonAttributes(client *plane.Client, projectID string) (*commonAttr
 			}
 			fmt.Printf("✓ Selected %d labels\n", len(attrs.Labels))
 
-		case 3: // Module
+		case "module":
 			modules, err := client.GetModules(projectID)
 			if err != nil {
 				fmt.Printf("❌ Error fetching modules: %v\n", err)
@@ -494,7 +508,7 @@ func selectCommonAttributes(client *plane.Client, projectID string) (*commonAttr
 				fmt.Printf("✓ Module set to: %s\n", modules[idx-1].Name)
 			}
 
-		case 4: // State
+		case "state":
 			state, err := selectState()
 			if err != nil {
 				continue
@@ -502,7 +516,7 @@ func selectCommonAttributes(client *plane.Client, projectID string) (*commonAttr
 			attrs.State = state
 			fmt.Printf("✓ State set to: %s\n", state)
 
-		case 5: // Priority
+		case "priority":
 			priority, err := selectPriority()
 			if err != nil {
 				continue
@@ -510,7 +524,7 @@ func selectCommonAttributes(client *plane.Client, projectID string) (*commonAttr
 			attrs.Priority = priority
 			fmt.Printf("✓ Priority set to: %s\n", plane.GetPriorityName(plane.ParsePriority(priority)))
 
-		case 6: // Description
+		case "description":
 			fmt.Println("\nEnter description source:")
 			srcIdx, err := selectOption("Select source:", []string{
 				"Enter text directly",
@@ -544,7 +558,7 @@ func selectCommonAttributes(client *plane.Client, projectID string) (*commonAttr
 				fmt.Printf("✓ Description loaded from file (%d chars)\n", len(content))
 			}
 
-		case 7: // Done
+		case "done":
 			return attrs, nil
 		}
 	}

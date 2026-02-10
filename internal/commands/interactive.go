@@ -588,7 +588,7 @@ func runBulkCreateInteractive(client *plane.Client) error {
 	}
 
 	// Step 3: Get common attributes
-	attrs, err := selectCommonAttributes(client, project.ID)
+	attrs, err := selectCommonAttributes(client, project.ID, true, true, true, true, true)
 	if err != nil {
 		return err
 	}
