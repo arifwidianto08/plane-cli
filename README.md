@@ -1,22 +1,24 @@
 # Plane CLI
 
-A Go-based CLI tool for automating Plane.so work item management with fuzzy title matching and template-based descriptions.
+A powerful Go-based CLI tool for managing Plane.so projects with interactive workflows, bulk operations, and comprehensive project management features.
 
 ## Features
 
-- **Work Item CRUD**: Create, read, and update work items across multiple projects
-- **Fuzzy Title Matching**: Find and update work items by approximate title matching
+- **Interactive Mode**: User-friendly menu-driven interface with arrow key navigation
+- **Work Item Management**: Create, read, update, and delete work items
+- **Bulk Operations**: Update multiple work items simultaneously
+- **Fuzzy Title Matching**: Find work items by approximate title matching
+- **Project Management**: Manage modules, labels, and pages
 - **JSON Templates**: Standardized description templates with variable substitution
+- **Configuration Wizard**: Interactive setup and configuration management
 - **Multi-Project Support**: Work across different Plane projects
-- **Interactive Mode**: Select from multiple matches or projects
-- **Batch Operations**: Update multiple work items at once
 
 ## Installation
 
 ```bash
-# Clone or download the repository
+# Clone the repository
 git clone <repo-url>
-cd plane-automation
+cd plane-cli
 
 # Build the binary
 go build -o plane-cli ./cmd/plane-cli/
@@ -27,24 +29,35 @@ go install ./cmd/plane-cli/
 
 ## Quick Start
 
-### 1. Initialize Configuration
+### 1. Configure the CLI
 
 ```bash
-./plane-cli init
+# Interactive configuration (recommended)
+./plane-cli configure
+
+# Or view current configuration
+./plane-cli configure --show
 ```
 
-This will:
-- Create `.env` file for API credentials
-- Create `config.yaml` for defaults
-- Set up templates directory with examples
+The configuration wizard will prompt you for:
+- **Plane Base URL**: Your Plane instance URL (e.g., `https://project.your-domain.com`)
+- **API Token**: Your personal access token from Plane settings
+- **Workspace**: Your workspace slug
 
-### 2. Configure Credentials
+Configuration is saved to `.env` file in the current directory.
 
-Edit `.env`:
+### 2. Launch Interactive Mode
+
 ```bash
-PLANE_BASE_URL=https://plane.your-domain.com
-PLANE_API_TOKEN=your_personal_access_token_here
+./plane-cli interactive
 ```
+
+This opens the main menu with all features:
+- Work Items (single update)
+- Bulk Update (multiple work items)
+- Modules
+- Labels  
+- Pages
 
 ### 3. List Your Projects
 
@@ -52,39 +65,189 @@ PLANE_API_TOKEN=your_personal_access_token_here
 ./plane-cli project list
 ```
 
-### 4. Create a Work Item
+## Commands Reference
+
+### Interactive Mode
 
 ```bash
-./plane-cli create \
-  --project my-project \
-  --title "Admin tenant UI" \
-  --template feature \
-  --vars feature_name="Authentication Module"
+# Main interactive menu - access all features
+plane-cli interactive
+
+# Interactive work item update
+plane-cli interactive-update
+
+# Interactive module management
+plane-cli module interactive
+
+# Interactive label management
+plane-cli label interactive
+
+# Interactive page management
+plane-cli page interactive
 ```
 
-### 5. Update by Fuzzy Title
+### Configuration
 
 ```bash
-./plane-cli update \
-  --title-fuzzy "admin tenant" \
-  --template feature \
-  --interactive
-```
+# Interactive configuration setup
+plane-cli configure
 
-## Commands
+# View current configuration (token is masked)
+plane-cli configure --show
+```
 
 ### Work Items
 
 ```bash
 # Create new work item
-plane-cli create --project <project> --title <title> [options]
+plane-cli create \
+  --project <project-id> \
+  --title "Work item title" \
+  [--description "Description text"] \
+  [--description-file path/to/file.md] \
+  [--state "Backlog"] \
+  [--priority high] \
+  [--assignees user-id-1,user-id-2]
 
-# Update work items
-plane-cli update --id <id> [options]                    # By ID
-plane-cli update --title-fuzzy <pattern> [options]      # Fuzzy search
+# Update work item by ID
+plane-cli update \
+  --id <work-item-id> \
+  --project <project-id> \
+  [--title "New title"] \
+  [--description-file update.md] \
+  [--state "In Progress"] \
+  [--assignees user-id-1]
+
+# Update by fuzzy title matching
+plane-cli update \
+  --title-fuzzy "search pattern" \
+  --project <project-id> \
+  [--template feature] \
+  [--interactive] \
+  [--auto]
 
 # List work items
-plane-cli list --project <project> [filters]
+plane-cli list --project <project-id> [options]
+  [--state "In Progress"]
+  [--priority high]
+  [--limit 50]
+```
+
+### Bulk Update
+
+```bash
+# Interactive bulk update (select multiple items with SPACE)
+plane-cli bulk-update --project <project-id>
+
+# Bulk update by search pattern
+plane-cli bulk-update \
+  --project <project-id> \
+  --search "BE" \
+  --state "In Progress" \
+  --assignees user-id-1,user-id-2
+
+# Bulk set estimate points
+plane-cli bulk-update \
+  --project <project-id> \
+  --search "SaaS" \
+  --estimate 5
+
+# Bulk add labels (merges with existing)
+plane-cli bulk-update \
+  --project <project-id> \
+  --labels label-1,label-2
+
+# Dry run to preview changes
+plane-cli bulk-update \
+  --project <project-id> \
+  --search "API" \
+  --state "Done" \
+  --dry-run
+```
+
+### Modules
+
+```bash
+# List all modules
+plane-cli module list --project <project-id>
+
+# Create module
+plane-cli module create \
+  --project <project-id> \
+  --name "Frontend" \
+  [--description "Module description"] \
+  [--status backlog]
+
+# Update module
+plane-cli module update \
+  --project <project-id> \
+  --id <module-id> \
+  [--name "New Name"] \
+  [--status started]
+
+# Delete module
+plane-cli module delete \
+  --project <project-id> \
+  --id <module-id>
+
+# Interactive module management
+plane-cli module interactive
+```
+
+### Labels
+
+```bash
+# List all labels
+plane-cli label list --project <project-id>
+
+# Create label
+plane-cli label create \
+  --project <project-id> \
+  --name "bug" \
+  [--color "#ff0000"]
+
+# Update label
+plane-cli label update \
+  --project <project-id> \
+  --id <label-id> \
+  [--name "Bug"] \
+  [--color "#ff0000"]
+
+# Delete label
+plane-cli label delete \
+  --project <project-id> \
+  --id <label-id>
+
+# Interactive label management
+plane-cli label interactive
+```
+
+### Pages
+
+```bash
+# List all pages
+plane-cli page list --project <project-id>
+
+# Create page from file
+plane-cli page create \
+  --project <project-id> \
+  --name "Documentation" \
+  --description-file docs.md \
+  [--access public]
+
+# Update page
+plane-cli page update \
+  --project <project-id> \
+  --id <page-id> \
+  [--description-file updated.md]
+
+# Delete page
+plane-cli page delete \
+  --project <project-id> \
+  --id <page-id>
+
+# Interactive page management
+plane-cli page interactive
 ```
 
 ### Projects
@@ -113,95 +276,104 @@ plane-cli template create my-template
 plane-cli template delete my-template
 ```
 
-## Examples
+## Interactive Mode Examples
 
-### Create Work Item with Template
-
-```bash
-plane-cli create \
-  --project admin-panel \
-  --title "User authentication module" \
-  --template feature \
-  --vars feature_name="Authentication" \
-  --vars checklist_items='["Login form","Session management","Password reset"]' \
-  --priority high \
-  --assignee user@example.com
-```
-
-### Update Empty Descriptions
+### Single Work Item Update
 
 ```bash
-# Find all work items matching pattern and add descriptions
-plane-cli update \
-  --title-fuzzy "tenant admin" \
-  --template feature \
-  --auto \
-  --min-score 70
+plane-cli interactive-update
+
+📁 Step 1: Select a Project
+> GloryX (ERPGLX)
+
+🔍 Step 2: Find Work Item
+? Enter search term: API
+
+Found 12 match(es):
+? Select work item:
+> [61] [BE] SaaS - Auth (Score: 95%)
+  [32] [BE] API Integration (Score: 90%)
+
+✏️  Step 3: What would you like to update?
+? Select an option:
+> Description
+  Title
+  State
+  Priority
+  Assignees
+  Estimate Points
+  Module
 ```
 
-### Interactive Mode
+### Bulk Update Multiple Items
 
 ```bash
-plane-cli update --title-fuzzy "api" --interactive
+plane-cli bulk-update --project c20fcc54-c675-47c4-85db-a4acdde3c9e1
 
-Found 4 matching work items:
-  1. [92%] API integration module (ADM-123)
-  2. [85%] Update API documentation (ADM-124)
-  3. [78%] Fix API authentication bug (ADM-125)
-  4. [65%] Create API client library (ADM-126)
+📥 Fetching work items from project 'GloryX'...
+Found 45 work items. Select which ones to update:
 
-Select items (comma-separated, 'all', or 'cancel'): 1,3
+? Select work items (SPACE to select, ENTER to confirm):
+> [ ] [61] [BE] SaaS - Auth
+  [ ] [32] [BE] Setup Project
+  [x] [62] [BE] Tenant - Auth
+  [x] [56] [BE] SaaS - Add Ons
+  [x] [57] [BE] SaaS - Invoice
+
+✓ Selected 3 work items
+
+What would you like to update?
+> Assignees
+  Estimate Points
+  Labels
+  Module
+  State
+  Priority
+
+👥 Update Assignees
+? What would you like to do?
+> Add assignees to existing ones
+  Replace all assignees
+  Clear all assignees
+
+? Select assignees to add:
+> [x] John Doe (john@example.com)
+  [ ] Jane Smith (jane@example.com)
+  [x] Bob Wilson (bob@example.com)
+
+📋 Bulk Update Preview:
+----------------------------------------------------------------------
+Project: GloryX
+Work items to update: 3
+
+Selected work items:
+  • [62] [BE] Tenant - Auth
+  • [56] [BE] SaaS - Add Ons
+  • [57] [BE] SaaS - Invoice
+
+Updates to apply:
+   → Assignees: 2 selected
+
+? Apply these updates to all selected work items? Yes
+
+🔄 Updating 3 work items...
+
+  ✅ Updated: [62] [BE] Tenant - Auth
+  ✅ Updated: [56] [BE] SaaS - Add Ons
+  ✅ Updated: [57] [BE] SaaS - Invoice
+
+----------------------------------------------------------------------
+✅ Completed: 3/3 work items updated successfully
 ```
-
-### Dry Run
-
-```bash
-plane-cli update --title-fuzzy "dashboard" --template feature --dry-run
-
-DRY RUN - No changes will be made
-
-Found 3 matching work items:
-  [88%] Admin dashboard redesign (WEB-001)
-    → Would update description using template "feature"
-  
-  [76%] Dashboard analytics widget (WEB-002)
-    → Would update description using template "feature"
-```
-
-## Templates
-
-Templates are stored in JSON format in the `templates/` directory.
-
-### Template Format
-
-```json
-{
-  "name": "feature",
-  "description": "Feature development template",
-  "content": "## Definition Of Done\n\n* [ ] {{feature_name}}\n{{#checklist_items}}  * [ ] {{item}}\n{{/checklist_items}}",
-  "variables": ["feature_name", "checklist_items"]
-}
-```
-
-### Variable Syntax
-
-- Simple variables: `{{variable_name}}`
-- Lists: `{{#list}} {{item}} {{/list}}`
-- Conditionals: `{{#if condition}} ... {{/if}}`
-
-### Default Templates
-
-- **feature** - Definition of Done checklist for features
-- **bug** - Bug report with reproduction steps
-- **task** - Simple task with checklist
 
 ## Configuration
 
 ### Environment Variables (.env)
 
 ```bash
-PLANE_BASE_URL=https://plane.your-domain.com
-PLANE_API_TOKEN=your_token_here
+PLANE_BASE_URL=https://project.your-domain.com
+PLANE_API_TOKEN=plane_api_your_token_here
+PLANE_WORKSPACE=your-workspace-slug
 ```
 
 ### Config File (config.yaml)
@@ -221,12 +393,47 @@ fuzzy:
   max_results: 10
 ```
 
+## Features in Detail
+
+### Fuzzy Title Matching
+
+The CLI uses fuzzy matching to find work items by approximate titles:
+- Tolerates typos and partial matches
+- Configurable minimum score (0-100)
+- Falls back to substring matching for short patterns
+
+```bash
+# Will find "[BE] API Integration" when searching "api"
+plane-cli update --title-fuzzy "api" --project my-project
+```
+
+### Bulk Operations
+
+Update multiple work items simultaneously:
+- Select items with SPACE key in interactive mode
+- Update assignees, estimates, labels, module, state, priority
+- Preview changes before applying
+- Shows success/failure for each item
+
+### Arrow Key Navigation
+
+All interactive prompts support:
+- **↑/↓ arrows**: Navigate through options
+- **SPACE**: Select/deselect (for multi-select)
+- **ENTER**: Confirm selection
+- **Ctrl+C**: Cancel operation
+
 ## API Requirements
 
 This tool requires:
-- Self-hosted Plane.so instance
-- Personal Access Token (from Plane settings)
+- Plane.so instance (self-hosted or cloud)
+- Personal Access Token (from Plane workspace settings → API)
 - API access enabled on your instance
+
+To get your API token:
+1. Go to your Plane workspace
+2. Navigate to Settings → API
+3. Generate a new personal access token
 
 ## Development
 
@@ -239,6 +446,9 @@ go build -o plane-cli ./cmd/plane-cli/
 
 # Install dependencies
 go mod tidy
+
+# Run with debug output
+./plane-cli --debug <command>
 ```
 
 ## License
