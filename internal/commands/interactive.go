@@ -61,7 +61,8 @@ func runInteractive(cmd *cobra.Command, args []string) error {
 		fmt.Println(strings.Repeat("=", 70))
 
 		options := []string{
-			"📋 Work Items - Update work items (description, assignees, state, etc.)",
+			"📋 Work Items - Update single work item",
+			"⚡ Bulk Update - Update multiple work items at once",
 			"📦 Modules - Create, update, delete project modules",
 			"🏷️  Labels - Manage project labels and tags",
 			"📄 Pages - Create and manage project documentation pages",
@@ -84,21 +85,26 @@ func runInteractive(cmd *cobra.Command, args []string) error {
 			}
 
 		case 1:
-			if err := runModuleInteractiveSubmenu(client); err != nil {
+			if err := runBulkUpdateInteractive(client); err != nil {
 				fmt.Printf("\n❌ Error: %v\n", err)
 			}
 
 		case 2:
-			if err := runLabelInteractiveSubmenu(client); err != nil {
+			if err := runModuleInteractiveSubmenu(client); err != nil {
 				fmt.Printf("\n❌ Error: %v\n", err)
 			}
 
 		case 3:
-			if err := runPageInteractiveSubmenu(client); err != nil {
+			if err := runLabelInteractiveSubmenu(client); err != nil {
 				fmt.Printf("\n❌ Error: %v\n", err)
 			}
 
 		case 4:
+			if err := runPageInteractiveSubmenu(client); err != nil {
+				fmt.Printf("\n❌ Error: %v\n", err)
+			}
+
+		case 5:
 			fmt.Println("\n👋 Goodbye!")
 			return nil
 		}
@@ -334,6 +340,225 @@ func runPageInteractiveSubmenu(client *plane.Client) error {
 
 		case 4:
 			return nil
+		}
+	}
+}
+
+// Bulk Update Interactive
+func runBulkUpdateInteractive(client *plane.Client) error {
+	fmt.Println("\n" + strings.Repeat("-", 70))
+	fmt.Println("                    ⚡ BULK UPDATE")
+	fmt.Println(strings.Repeat("-", 70))
+
+	// Step 1: Select Project
+	project, err := selectProjectInteractive(client)
+	if err != nil {
+		return err
+	}
+
+	// Fetch all work items
+	fmt.Printf("\n📥 Fetching work items from project '%s'...\n", project.Name)
+	allWorkItems, err := fetchAllWorkItemsForProject(client, project.ID)
+	if err != nil {
+		return fmt.Errorf("failed to fetch work items: %w", err)
+	}
+
+	if len(allWorkItems) == 0 {
+		return fmt.Errorf("no work items found in this project")
+	}
+
+	// Select work items
+	fmt.Printf("\nFound %d work items. Select which ones to update:\n", len(allWorkItems))
+	selectedWorkItems, err := selectMultipleWorkItemsInteractive(allWorkItems)
+	if err != nil {
+		return err
+	}
+
+	if len(selectedWorkItems) == 0 {
+		return fmt.Errorf("no work items selected")
+	}
+
+	// Choose what to update
+	update, err := chooseBulkUpdateFields(client, project.ID, selectedWorkItems)
+	if err != nil {
+		return err
+	}
+
+	if update == nil {
+		fmt.Println("\nNo changes selected.")
+		return nil
+	}
+
+	// Preview changes
+	fmt.Printf("\n📋 Bulk Update Preview:\n")
+	fmt.Println(strings.Repeat("-", 70))
+	fmt.Printf("Project: %s\n", project.Name)
+	fmt.Printf("Work items to update: %d\n", len(selectedWorkItems))
+	fmt.Println("\nSelected work items:")
+	for _, item := range selectedWorkItems {
+		fmt.Printf("  • [%d] %s\n", item.SequenceID, truncate(item.Name, 50))
+	}
+	fmt.Println("\nUpdates to apply:")
+	printUpdatePreview(update)
+	fmt.Println(strings.Repeat("-", 70))
+
+	// Confirm
+	confirmed, err := confirm("\nApply these updates to all selected work items?")
+	if err != nil {
+		return err
+	}
+	if !confirmed {
+		fmt.Println("\n❌ Update cancelled.")
+		return nil
+	}
+
+	// Apply updates
+	fmt.Printf("\n🔄 Updating %d work items...\n\n", len(selectedWorkItems))
+
+	successCount := 0
+	failCount := 0
+
+	for _, item := range selectedWorkItems {
+		_, err := client.UpdateWorkItem(project.ID, item.ID, update)
+		if err != nil {
+			fmt.Printf("  ❌ Failed: [%d] %s - %v\n", item.SequenceID, truncate(item.Name, 40), err)
+			failCount++
+		} else {
+			fmt.Printf("  ✅ Updated: [%d] %s\n", item.SequenceID, truncate(item.Name, 40))
+			successCount++
+		}
+	}
+
+	fmt.Printf("\n%s\n", strings.Repeat("-", 70))
+	fmt.Printf("✅ Completed: %d/%d work items updated successfully\n", successCount, len(selectedWorkItems))
+	if failCount > 0 {
+		fmt.Printf("❌ Failed: %d work items\n", failCount)
+	}
+
+	return nil
+}
+
+// chooseBulkUpdateFields allows selecting which fields to bulk update
+func chooseBulkUpdateFields(client *plane.Client, projectID string, workItems []plane.WorkItem) (*plane.WorkItemUpdate, error) {
+	update := &plane.WorkItemUpdate{}
+	hasUpdates := false
+
+	for {
+		fmt.Println("\n" + strings.Repeat("-", 70))
+		fmt.Println("Select fields to update (choose one at a time, 'done' when finished):")
+		fmt.Println(strings.Repeat("-", 70))
+
+		options := []string{
+			"Assignees",
+			"Estimate Points",
+			"Labels",
+			"Module",
+			"State",
+			"Priority",
+			"Done - Apply changes",
+			"Cancel",
+		}
+
+		idx, err := selectOption("What would you like to update?", options)
+		if err != nil {
+			return nil, err
+		}
+
+		switch idx {
+		case 0: // Assignees
+			assignees, replace, err := selectAssigneesInteractive(client, projectID, workItems)
+			if err != nil {
+				if err.Error() == "cancelled" {
+					continue
+				}
+				return nil, err
+			}
+			if len(assignees) > 0 {
+				if replace {
+					update.Assignees = assignees
+				} else {
+					// Merge with existing
+					allExisting := getAllAssignees(workItems)
+					update.Assignees = mergeSlices(allExisting, assignees)
+				}
+				hasUpdates = true
+				fmt.Println("✓ Assignees updated")
+			}
+
+		case 1: // Estimate
+			estimate, err := selectEstimateInteractive()
+			if err != nil {
+				continue
+			}
+			if estimate >= 0 {
+				update.EstimatePoint = estimate
+				hasUpdates = true
+				fmt.Printf("✓ Estimate set to: %.1f\n", estimate)
+			}
+
+		case 2: // Labels
+			labels, replace, err := selectLabelsInteractive(client, projectID)
+			if err != nil {
+				if err.Error() == "cancelled" {
+					continue
+				}
+				return nil, err
+			}
+			if len(labels) > 0 {
+				if replace {
+					update.Labels = labels
+				} else {
+					// Merge with existing
+					allExisting := getAllLabels(workItems)
+					update.Labels = mergeSlices(allExisting, labels)
+				}
+				hasUpdates = true
+				fmt.Println("✓ Labels updated")
+			}
+
+		case 3: // Module
+			moduleID, err := selectModuleInteractive(client, projectID)
+			if err != nil {
+				if err.Error() == "cancelled" {
+					continue
+				}
+				return nil, err
+			}
+			update.Module = moduleID
+			hasUpdates = true
+			if moduleID == "" {
+				fmt.Println("✓ Module cleared")
+			} else {
+				fmt.Println("✓ Module updated")
+			}
+
+		case 4: // State
+			state, err := selectState()
+			if err != nil {
+				continue
+			}
+			update.State = state
+			hasUpdates = true
+			fmt.Printf("✓ State set to: %s\n", state)
+
+		case 5: // Priority
+			priority, err := selectPriority()
+			if err != nil {
+				continue
+			}
+			update.Priority = priority
+			hasUpdates = true
+			fmt.Printf("✓ Priority set to: %s\n", priority)
+
+		case 6: // Done
+			if !hasUpdates {
+				fmt.Println("⚠️  No updates selected. Please select at least one field to update.")
+				continue
+			}
+			return update, nil
+
+		case 7: // Cancel
+			return nil, nil
 		}
 	}
 }
